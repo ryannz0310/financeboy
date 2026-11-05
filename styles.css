@@ -573,3 +573,10 @@ input[type=range]{accent-color:var(--navy);width:100%}
 .nav a{padding:24px 9px 22px;font-size:14.5px;white-space:nowrap}
 @media (max-width:1300px){.focus-btn:not(.on):not(.brk) span{display:none}.search-btn span{display:none}}
 @media (max-width:1020px){.nav a{padding:10px 10px 12px}}
+
+/* ---------- logo ---------- */
+.brand{flex-direction:column;align-items:flex-start;gap:5px}
+.brand img{display:block;height:24px;width:auto}
+.brand small{font:600 12px/1 var(--sans);color:var(--gold-dark);letter-spacing:.01em}
+.foot-logo{display:block;height:50px;width:auto;margin-bottom:14px}
+@media (max-width:560px){.brand img{height:19px}}
