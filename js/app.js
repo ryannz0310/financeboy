@@ -429,6 +429,7 @@ routes.lesson = function (id) {
       </section>
       ${VID.length ? `<section class="part" id="p-vid">${H('p-vid')}
         ${bi('<p>Free videos that explain this lesson another way. Watch after reading the explanation, then come back for the quiz. Need Vietnamese? Turn on subtitles (CC), then Settings → Subtitles → Auto-translate → Vietnamese.</p>', '<p>Video miễn phí giải thích bài này theo cách khác. Xem sau khi đọc phần giải thích, rồi quay lại làm quiz. Cần tiếng Việt? Bật phụ đề (CC), vào Cài đặt → Phụ đề → Tự động dịch → Tiếng Việt.</p>')}
+        ${canEmbed ? '' : `<p class="vnote">${t('This preview can’t show players from other sites, so each video opens in a new tab. On the published FinanceBoy site, videos play right here in the page.', 'Bản xem trước này không hiển thị được trình phát của trang khác, nên video mở ở tab mới. Trên trang FinanceBoy đã đăng, video phát ngay trong trang.')}</p>`}
         <div class="vids">${VID.map((v, i) => vidCard(v, id + ':' + i)).join('')}</div></section>` : ''}
       <section class="part" id="p-voc">${H('p-voc')}
         <table class="vocab"><thead><tr><th>English term</th><th>Tiếng Việt</th><th class="en">Explanation</th><th class="vi" lang="vi">Giải thích</th></tr></thead>

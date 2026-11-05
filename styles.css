@@ -604,3 +604,4 @@ input[type=range]{accent-color:var(--navy);width:100%}
 .vmeta .bi .vi{margin-top:4px;color:var(--gold-dark);font-size:14px}
 body.lang-en .vmeta .bi .vi,body.lang-vi .vmeta .bi .en{display:none}
 .vplay .pi{top:40%}
+.vnote{font-size:14px;color:var(--muted,#5b6478);border-left:3px solid #F2A900;padding:4px 0 4px 12px;margin:4px 0 16px}
