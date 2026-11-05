@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinanceBoy: learn finance in English and Vietnamese</title>
+<meta name="description" content="Bilingual (English / Vietnamese) pre-finance program: lessons, quizzes, flashcards and calculators.">
+<meta name="theme-color" content="#012169">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 3h24v13c0 7-5 11-12 13C9 27 4 23 4 16z' fill='%23012169'/%3E%3Ctext x='16' y='21' font-family='Georgia' font-weight='700' font-size='14' text-anchor='middle' fill='%23f2a900'%3EFB%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Noto+Serif:ital,wght@0,400;0,600;0,700;1,400&display=swap&subset=vietnamese" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="lang-both">
+<a class="skip" href="#main">Skip to content</a>
+<div class="utility">
+  <div class="wrap utility-in">
+    <span id="today"></span>
+    <div class="quotes" id="quotes" aria-label="Your progress"></div>
+    <div class="langs" role="group" aria-label="Language">
+      <button data-lang="both" aria-pressed="true">EN + VI</button>
+      <button data-lang="en" aria-pressed="false">EN</button>
+      <button data-lang="vi" aria-pressed="false">VI</button>
+    </div>
+  </div>
+</div>
+<header class="site-head">
+  <div class="wrap head-in">
+    <a class="brand" href="#front">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 3h24v13c0 7-5 11-12 13C9 27 4 23 4 16z" class="sh"/><text x="16" y="20.5" text-anchor="middle" class="mono">FB</text></svg>
+      <span><b>FinanceBoy</b><small>Created by Ryan</small></span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#front" data-nav="">Home</a>
+      <a href="#course" data-nav="course">Curriculum</a>
+      <a href="#roadmap" data-nav="roadmap">Roadmap</a>
+      <a href="#lab" data-nav="lab">Lab</a>
+      <a href="#cards" data-nav="cards">Flashcards</a>
+      <a href="#review" data-nav="review">Practice</a>
+      <a href="#glossary" data-nav="glossary">Glossary</a>
+      <a href="#notes" data-nav="notes">Notes</a>
+    </nav>
+    <button class="focus-btn" id="focusBtn" title="Start a 25-minute focus session"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg><span>Focus 25:00</span></button>
+    <button class="search-btn" id="openSearch" aria-label="Search lessons and terms"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg><span>Search</span><kbd>/</kbd></button>
+  </div>
+</header>
+<div class="readbar" id="readbar" aria-hidden="true"><i></i></div>
+<main id="main" tabindex="-1"></main>
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div><b>FinanceBoy</b><p class="credit">Created by Ryan</p><p>A personal, bilingual pre-finance program. Example numbers are hypothetical unless a source is named; nothing here is investment advice.</p><p lang="vi" class="vi">Chương trình tiền tài chính song ngữ cá nhân. Số liệu ví dụ là giả định trừ khi có nguồn; không có nội dung nào là khuyến nghị đầu tư.</p></div>
+    <div><b>Study</b><a href="#course">Curriculum</a><a href="#review">Mixed review</a><a href="#review-mistakes">Mistake notebook</a><a href="#roadmap">12-month roadmap</a><a href="#cards">Flashcards</a></div>
+    <div><b>Tools</b><a href="#lab">Calculators</a><a href="#roadmap-library">Sources &amp; books</a><a href="#glossary">Glossary</a><a href="#notes">Notes and backup</a></div>
+  </div>
+</footer>
+<div class="search-modal" id="search" hidden>
+  <div class="search-box" role="dialog" aria-modal="true" aria-label="Search">
+    <input id="sq" type="search" placeholder="Search lessons and terms, in English or Vietnamese" autocomplete="off">
+    <div class="search-res" id="sres"></div>
+    <p class="kbd"><kbd>Enter</kbd> opens a result, <kbd>Esc</kbd> closes, <kbd>?</kbd> shows all shortcuts</p>
+  </div>
+</div>
+<div class="keys-modal" id="keys" hidden>
+  <div class="keys-box" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+    <h3>Keyboard shortcuts</h3>
+    <dl>
+      <dt><kbd>/</kbd></dt><dd>Search lessons and terms</dd>
+      <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
+      <dt><kbd>g</kbd> then <kbd>h</kbd></dt><dd>Home</dd>
+      <dt><kbd>g</kbd> then <kbd>c</kbd></dt><dd>Curriculum</dd>
+      <dt><kbd>g</kbd> then <kbd>p</kbd></dt><dd>Practice</dd>
+      <dt><kbd>g</kbd> then <kbd>m</kbd></dt><dd>Mistake notebook</dd>
+      <dt><kbd>g</kbd> then <kbd>f</kbd></dt><dd>Flashcards</dd>
+      <dt><kbd>g</kbd> then <kbd>l</kbd></dt><dd>Lab</dd>
+      <dt><kbd>g</kbd> then <kbd>r</kbd></dt><dd>Roadmap</dd>
+      <dt><kbd>g</kbd> then <kbd>b</kbd></dt><dd>Sources &amp; books</dd>
+      <dt><kbd>Space</kbd>, <kbd>1</kbd>, <kbd>2</kbd></dt><dd>Flip, again, known (flashcards)</dd>
+    </dl>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="js/course.js"></script>
+<script src="js/lessons-m1-m2.js"></script>
+<script src="js/lessons-m3-m7.js"></script>
+<script src="js/lessons-m7-m9.js"></script>
+<script src="js/plan-data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
