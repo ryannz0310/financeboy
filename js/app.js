@@ -8,7 +8,7 @@ function load() { try { mem = JSON.parse(localStorage.getItem(KEY)) || {}; } cat
 function save() { try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch (e) { /* storage unavailable: keep in memory */ } }
 load();
 const S = (k, d) => (mem[k] === undefined ? (mem[k] = d) : mem[k]);
-S('lang', 'both'); S('best', {}); S('notes', {}); S('tasks', {}); S('cards', {}); S('days', []); S('reviews', []); S('mistakes', {}); S('mins', {}); S('focus', {}); S('goal', 30); S('read', {}); S('feyn', {}); S('log', {}); S('road', {}); S('books', {}); S('ex', {}); S('walk', 0);
+S('lang', 'both'); S('best', {}); S('notes', {}); S('tasks', {}); S('cards', {}); S('days', []); S('reviews', []); S('mistakes', {}); S('mins', {}); S('focus', {}); S('goal', 30); S('read', {}); S('feyn', {}); S('log', {}); S('road', {}); S('books', {}); S('ex', {}); S('walk', 0); S('watched', {});
 
 const today = () => new Date().toISOString().slice(0, 10);
 function touchDay() { const d = today(); if (!mem.days.includes(d)) { mem.days.push(d); save(); } }
@@ -368,6 +368,29 @@ function wireQuiz(root, qs, prefix, onDone) {
   });
 }
 
+
+/* ---------- videos ---------- */
+const canEmbed = !/claude|anthropic/.test(location.hostname);
+function vidHref(v) { return v.yt ? 'https://www.youtube.com/watch?v=' + v.yt : v.list ? 'https://www.youtube.com/playlist?list=' + v.list : v.url || 'https://www.youtube.com/results?search_query=' + encodeURIComponent(v.q); }
+function vidCard(v, key) {
+  const href = vidHref(v), play = canEmbed && (v.yt || v.list), seen = mem.watched[key];
+  const where = v.yt || v.list || v.q ? 'YouTube' : 'Khan Academy';
+  const thumb = v.yt ? ` style="background-image:linear-gradient(rgba(1,33,105,.35),rgba(1,33,105,.55)),url(https://i.ytimg.com/vi/${v.yt}/hqdefault.jpg)"` : '';
+  const inner = `<span class="pi" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span><span class="vt">${esc(v.t)}</span><span class="vs">${esc(v.src)}${v.len ? ', ' + esc(v.len) : ''}</span>`;
+  return `<div class="vid ${seen ? 'seen' : ''}" data-key="${key}"><div class="vframe ${v.list ? 'pl' : ''}"${thumb}>${play
+    ? `<button class="vplay" data-yt="${v.yt || ''}" data-list="${v.list || ''}" aria-label="Play ${esc(v.t)}">${inner}</button>`
+    : `<a class="vplay" href="${href}" target="_blank" rel="noopener">${inner}</a>`}</div>
+    <div class="vmeta">${bi(`<p>${v.why[0]}</p>`, `<p>${v.why[1]}</p>`)}<div class="vlinks"><a href="${href}" target="_blank" rel="noopener" data-open>Open on ${where} ↗</a>${seen ? `<span class="pill done">Watched</span>` : ''}</div></div></div>`;
+}
+function wireVids() {
+  const mark = el => { const k = el.closest('.vid').dataset.key; if (!mem.watched[k]) { mem.watched[k] = today(); save(); } el.closest('.vid').classList.add('seen'); touchDay(); };
+  $$('.vid a.vplay, .vid [data-open]').forEach(a => a.addEventListener('click', () => mark(a)));
+  $$('.vid button.vplay').forEach(b => b.addEventListener('click', () => {
+    const src = b.dataset.yt ? `https://www.youtube-nocookie.com/embed/${b.dataset.yt}?autoplay=1&rel=0&cc_load_policy=1` : `https://www.youtube-nocookie.com/embed/videoseries?list=${b.dataset.list}&rel=0`;
+    const f = b.closest('.vframe'); f.innerHTML = `<iframe src="${src}" title="${esc(b.getAttribute('aria-label'))}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe>`; mark(f);
+  }));
+}
+
 /* ---------- lesson page ---------- */
 routes.lesson = function (id) {
   const meta = byId(id), L = LESSONS[id];
@@ -379,6 +402,8 @@ routes.lesson = function (id) {
     ['p-intro', 'Introduction', 'Giới thiệu'], ['p-exp', 'Explanation', 'Giải thích'], ['p-voc', 'Vocabulary', 'Từ vựng'],
     ['p-ex', 'Real-world example', 'Ví dụ thực tế'], ['p-num', 'Worked numbers', 'Ví dụ tính toán'], ['p-quiz', 'Knowledge check', 'Kiểm tra kiến thức'],
     ['p-task', 'Practice', 'Bài tập ứng dụng'], ['p-sum', 'Summary', 'Tổng kết']];
+  const VID = (window.VIDEOS || {})[id] || [];
+  if (VID.length) parts.splice(2, 0, ['p-vid', 'Watch', 'Xem video']);
   const H = (k) => { const i = parts.findIndex(x => x[0] === k), p = parts[i]; return `<h2><span class="pn">${i + 1}</span>${esc(p[1])}<span class="tag-vi vi" lang="vi">${esc(p[2])}</span></h2>`; };
   const best = mem.best[id];
   const LQ = L.quiz.map((q, qi) => Object.assign([...q], { lid: id, qi }));
@@ -402,6 +427,9 @@ routes.lesson = function (id) {
       <section class="part" id="p-exp">${H('p-exp')}
         ${L.sec.map(s => `<h3 class="sub">${esc(s[0])}<span class="tag-vi vi" lang="vi">${esc(s[1])}</span></h3>${bi(s[2], s[3])}`).join('')}
       </section>
+      ${VID.length ? `<section class="part" id="p-vid">${H('p-vid')}
+        ${bi('<p>Free videos that explain this lesson another way. Watch after reading the explanation, then come back for the quiz. Need Vietnamese? Turn on subtitles (CC), then Settings → Subtitles → Auto-translate → Vietnamese.</p>', '<p>Video miễn phí giải thích bài này theo cách khác. Xem sau khi đọc phần giải thích, rồi quay lại làm quiz. Cần tiếng Việt? Bật phụ đề (CC), vào Cài đặt → Phụ đề → Tự động dịch → Tiếng Việt.</p>')}
+        <div class="vids">${VID.map((v, i) => vidCard(v, id + ':' + i)).join('')}</div></section>` : ''}
       <section class="part" id="p-voc">${H('p-voc')}
         <table class="vocab"><thead><tr><th>English term</th><th>Tiếng Việt</th><th class="en">Explanation</th><th class="vi" lang="vi">Giải thích</th></tr></thead>
         <tbody>${L.vocab.map(v => `<tr><td>${esc(v[0])}</td><td lang="vi">${esc(v[1])}</td><td class="en">${esc(v[2])}</td><td class="vi" lang="vi">${esc(v[3])}</td></tr>`).join('')}</tbody></table>
@@ -438,6 +466,7 @@ routes.lesson = function (id) {
     </article>
   </div></div>`;
 
+  wireVids();
   $('#note').addEventListener('input', e => { mem.notes[id] = e.target.value; save(); });
   $('#taskans').addEventListener('input', e => { mem.tasks[id] = e.target.value; save(); });
   const drawTerms = () => {
@@ -928,6 +957,7 @@ function wireLibrary() { $$('[data-book]').forEach(s => s.onchange = () => { mem
     IDX.push({ type: 'Lesson', title: `${l.mi + 1}.${l.li + 1} ${l.en}`, sub: l.vi, href: '#lesson-' + l.id, text: norm([l.en, l.vi, L.intro.join(' '), L.sec.map(x => x.slice(0, 2).join(' ')).join(' ')].join(' ')) });
     L.sec.forEach(x => IDX.push({ type: 'Section', title: x[0], sub: `${x[1]}, lesson ${l.mi + 1}.${l.li + 1}`, href: '#lesson-' + l.id, text: norm(x[0] + ' ' + x[1] + ' ' + strip(x[2]) + ' ' + strip(x[3])) }));
   });
+  Object.entries(window.VIDEOS || {}).forEach(([lid, vs]) => { const l = byId(lid); if (l && l.ready) vs.forEach(v => IDX.push({ type: 'Video', title: v.t, sub: `${v.src}, lesson ${l.mi + 1}.${l.li + 1}`, href: '#lesson-' + lid, text: norm(v.t + ' ' + v.why.join(' ') + ' video') })); });
   VOCAB.forEach(v => IDX.push({ type: 'Term', title: v[0], sub: v[1] + ': ' + v[2], href: '#lesson-' + v[4], text: norm(v.slice(0, 4).join(' ')) }));
   Object.entries(TOOLS).forEach(([k, v]) => IDX.push({ type: 'Lab', title: v[0], sub: v[1], href: '#lab-' + k, text: norm(v.join(' ') + ' calculator lab may tinh') }));
   IDX.push({ type: 'Roadmap', title: '12-month roadmap', sub: 'Lộ trình 12 tháng', href: '#roadmap', text: norm('roadmap lo trinh plan ke hoach phase giai doan deliverable') });
