@@ -19,6 +19,7 @@
   <div class="wrap utility-in">
     <span id="today"></span>
     <div class="quotes" id="quotes" aria-label="Your progress"></div>
+    <a class="rank-chip" id="rankChip" href="#progress" aria-label="Your progress"></a>
     <div class="langs" role="group" aria-label="Language">
       <button data-lang="both" aria-pressed="true">EN + VI</button>
       <button data-lang="en" aria-pressed="false">EN</button>
@@ -51,7 +52,7 @@
 <footer class="foot">
   <div class="wrap foot-in">
     <div><img class="foot-logo" src="assets/logo-dark-tag.svg" alt="FinanceBoy, created by Ryan" width="260" height="50"><p>A personal, bilingual pre-finance program. Example numbers are hypothetical unless a source is named; nothing here is investment advice.</p><p lang="vi" class="vi">Chương trình tiền tài chính song ngữ cá nhân. Số liệu ví dụ là giả định trừ khi có nguồn; không có nội dung nào là khuyến nghị đầu tư.</p></div>
-    <div><b>Study</b><a href="#course">Curriculum</a><a href="#review">Mixed review</a><a href="#review-mistakes">Mistake notebook</a><a href="#roadmap">12-month roadmap</a><a href="#cards">Flashcards</a></div>
+    <div><b>Study</b><a href="#course">Curriculum</a><a href="#review">Mixed review</a><a href="#review-challenge">Course challenge</a><a href="#review-drills">Drills</a><a href="#review-interview">Mock interview</a><a href="#review-mistakes">Mistake notebook</a><a href="#progress">Your progress</a><a href="#roadmap">12-month roadmap</a><a href="#cards">Flashcards</a></div>
     <div><b>Tools</b><a href="#lab">Calculators</a><a href="#roadmap-library">Sources &amp; books</a><a href="#glossary">Glossary</a><a href="#notes">Notes and backup</a></div>
   </div>
 </footer>
@@ -72,11 +73,16 @@
       <dt><kbd>g</kbd> then <kbd>c</kbd></dt><dd>Curriculum</dd>
       <dt><kbd>g</kbd> then <kbd>p</kbd></dt><dd>Practice</dd>
       <dt><kbd>g</kbd> then <kbd>m</kbd></dt><dd>Mistake notebook</dd>
+      <dt><kbd>g</kbd> then <kbd>d</kbd></dt><dd>Drills</dd>
+      <dt><kbd>g</kbd> then <kbd>i</kbd></dt><dd>Mock interview</dd>
+      <dt><kbd>g</kbd> then <kbd>x</kbd></dt><dd>Course challenge</dd>
+      <dt><kbd>g</kbd> then <kbd>o</kbd></dt><dd>Your progress</dd>
       <dt><kbd>g</kbd> then <kbd>f</kbd></dt><dd>Flashcards</dd>
       <dt><kbd>g</kbd> then <kbd>l</kbd></dt><dd>Lab</dd>
       <dt><kbd>g</kbd> then <kbd>r</kbd></dt><dd>Roadmap</dd>
       <dt><kbd>g</kbd> then <kbd>b</kbd></dt><dd>Sources &amp; books</dd>
       <dt><kbd>Space</kbd>, <kbd>1</kbd>, <kbd>2</kbd></dt><dd>Flip, again, known (flashcards)</dd>
+      <dt><kbd>Enter</kbd>, <kbd>h</kbd></dt><dd>Check or next, hint (drills)</dd>
     </dl>
   </div>
 </div>
@@ -87,6 +93,7 @@
 <script src="js/lessons-m7-m9.js"></script>
 <script src="js/plan-data.js"></script>
 <script src="js/videos.js"></script>
+<script src="js/train-data.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

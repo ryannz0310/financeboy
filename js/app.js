@@ -9,11 +9,12 @@ function save() { try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch 
 load();
 const S = (k, d) => (mem[k] === undefined ? (mem[k] = d) : mem[k]);
 S('lang', 'both'); S('best', {}); S('notes', {}); S('tasks', {}); S('cards', {}); S('days', []); S('reviews', []); S('mistakes', {}); S('mins', {}); S('focus', {}); S('goal', 30); S('read', {}); S('feyn', {}); S('log', {}); S('road', {}); S('books', {}); S('ex', {}); S('walk', 0); S('watched', {});
+S('xp', {}); S('lvl', {}); S('freeze', { n: 0, used: [], earned: [] }); S('badges', {}); S('drill', {}); S('iv', {}); S('chal', []); S('quizN', {});
 
 const today = () => new Date().toISOString().slice(0, 10);
-function touchDay() { const d = today(); if (!mem.days.includes(d)) { mem.days.push(d); save(); } }
+function touchDay() { const d = today(); if (!mem.days.includes(d)) { mem.days.push(d); save(); onNewDay(d); } }
 function streak() {
-  const set = new Set(mem.days); let n = 0; const d = new Date();
+  const set = new Set([...mem.days, ...mem.freeze.used]); let n = 0; const d = new Date();
   if (!set.has(d.toISOString().slice(0, 10))) d.setDate(d.getDate() - 1);
   while (set.has(d.toISOString().slice(0, 10))) { n++; d.setDate(d.getDate() - 1); }
   return n;
@@ -65,8 +66,8 @@ function dateline() {
   const d = new Date();
   $('#today').textContent = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const done = READY.filter(l => passed(l.id)).length, bests = Object.values(mem.best);
-  const avg = bests.length ? Math.round(bests.reduce((a, b) => a + b, 0) / bests.length * 100) + '%' : '–';
-  $('#quotes').innerHTML = `<span>LESSONS<b>${done}/${READY.length}</b> <span class="up">${done ? '▲' : ''}</span></span><span>QUIZ AVG<b>${avg}</b></span><span>STREAK<b>${streak()}d</b></span><span>CARDS DUE<b>${typeof dueCards === 'function' ? dueCards().length : 0}</b></span><span>TODAY<b>${mem.mins ? (mem.mins[today()] || 0) : 0}/${mem.goal || 30} min</b></span><span>MISTAKES<b>${typeof mistakeList === 'function' ? mistakeList().length : 0}</b></span><span>TERMS<b>${Object.keys(mem.cards).length}/${VOCAB.length}</b></span>`;
+  const rc = $('#rankChip'); if (rc && typeof xpTotal === 'function') { const x = xpTotal(); rc.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 2 1.3 3 2.5 3.5C11 9 11 5 12 2z"/></svg><b>${streak()}</b>${mem.freeze.n ? `<span class="fz" title="Streak freezes">❄${mem.freeze.n}</span>` : ''}<span class="rk">${RANKS[rankOf(x)][1]}</span><b>${x.toLocaleString('en-US')}</b><span>XP</span>`; rc.title = 'Your progress: streak, rank and XP'; }
+  $('#quotes').innerHTML = `<span>LESSONS<b>${done}/${READY.length}</b> <span class="up">${done ? '▲' : ''}</span></span><span>MASTERY<b>${typeof masteryPct === 'function' ? Math.round(masteryPct() * 100) : 0}%</b></span><span>CARDS DUE<b>${typeof dueCards === 'function' ? dueCards().length : 0}</b></span><span>TODAY<b>${mem.mins ? (mem.mins[today()] || 0) : 0}/${mem.goal || 30} min</b></span><span>MISTAKES<b>${typeof mistakeList === 'function' ? mistakeList().length : 0}</b></span>`;
 }
 
 /* ---------- svg line chart ---------- */
@@ -208,6 +209,7 @@ function planItems() {
   const L = dayLog(), items = [];
   items.push({ done: due === 0, en: due ? `Review ${due} due flashcard${due > 1 ? 's' : ''}` : 'No flashcards due today', vi: due ? `Ôn ${due} thẻ đến hạn` : 'Hôm nay không có thẻ đến hạn', href: '#cards' });
   if (next) items.push({ done: L.quiz > 0, en: `Study ${next.mi + 1}.${next.li + 1} ${next.en} and take its quiz`, vi: `Học bài ${next.mi + 1}.${next.li + 1} và làm quiz`, href: '#lesson-' + next.id });
+  items.push({ done: (L.drill || 0) >= 5, en: 'Solve a set of 5 drill problems', vi: 'Giải một bộ 5 bài luyện tính', href: '#review-drills' });
   items.push({ done: L.retest > 0 || mk === 0, en: mk ? `Retest ${mk} question${mk > 1 ? 's' : ''} from your mistake notebook` : 'Mistake notebook is empty', vi: mk ? `Làm lại ${mk} câu trong sổ lỗi sai` : 'Sổ lỗi sai đang trống', href: '#review-mistakes' });
   items.push({ done: (mem.focus[today()] || 0) > 0, en: 'Complete one 25-minute focus session', vi: 'Hoàn thành một phiên tập trung 25 phút', action: 'focus' });
   return items;
@@ -236,13 +238,124 @@ function wireToday() {
 }
 routes.refreshToday = () => { const box = $('#todayBox'); if (box) { box.innerHTML = todayHTML(); wireToday(); } };
 
+/* ---------- progress engine: XP and ranks, streak freezes, mastery levels, badges ---------- */
+const RANKS = [[0, 'Intern', 'Thực tập sinh'], [300, 'Analyst I', 'Chuyên viên phân tích năm 1'], [800, 'Analyst II', 'Chuyên viên phân tích năm 2'], [1500, 'Analyst III', 'Chuyên viên phân tích năm 3'], [2500, 'Associate', 'Chuyên viên cao cấp'], [4000, 'Vice President', 'Phó chủ tịch'], [6000, 'Director', 'Giám đốc'], [9000, 'Managing Director', 'Giám đốc điều hành']];
+const xpTotal = () => (mem.xpBase || 0) + Object.values(mem.xp).reduce((a, b) => a + b, 0);
+const xpToday = () => mem.xp[today()] || 0;
+function rankOf(x) { let i = 0; RANKS.forEach((r, k) => { if (x >= r[0]) i = k; }); return i; }
+function xpPop(n) {
+  const el = document.createElement('div'); el.className = 'xp-pop'; el.setAttribute('aria-hidden', 'true'); el.textContent = '+' + n + ' XP';
+  document.body.appendChild(el); setTimeout(() => el.remove(), 1700);
+}
+function award(n, quiet) {
+  if (!n) return;
+  const before = rankOf(xpTotal());
+  mem.xp[today()] = xpToday() + n; save();
+  if (!quiet) xpPop(n);
+  const after = rankOf(xpTotal());
+  if (after > before) celebrate('rank', RANKS[after]);
+  checkBadges(); dateline();
+}
+
+/* mastery levels, after Khan Academy: practice moves a lesson up; mixed course challenges confirm it or move it down */
+const LV = [['Not started', 'Chưa học'], ['Attempted', 'Đã thử'], ['Familiar', 'Quen thuộc'], ['Proficient', 'Thành thạo'], ['Mastered', 'Tinh thông']];
+const LVPTS = [0, 0, 50, 80, 100];
+const lvl = id => mem.lvl[id] || 0;
+function setLvl(id, v) { const o = lvl(id); mem.lvl[id] = Math.max(0, Math.min(4, v)); save(); return [o, mem.lvl[id]]; }
+function lessonQuizLvl(id, r) {
+  const c = lvl(id);
+  const v = r >= 1 ? Math.max(c, 3) : r >= PASS ? Math.max(c, 2) : c === 0 ? 1 : c === 4 ? 2 : c;
+  return setLvl(id, v);
+}
+const masteryPct = () => READY.length ? READY.filter(l => lvl(l.id) >= 3).length / READY.length : 0;
+const masteryPts = () => READY.reduce((a, l) => a + LVPTS[lvl(l.id)], 0);
+const lvSq = (id, cls = '') => { const v = lvl(id); return `<span class="lv lv${v} ${cls}" title="${LV[v][0]} / ${LV[v][1]}"><span class="sr">${LV[v][0]}</span></span>`; };
+const lvLegend = () => `<div class="lv-legend">${LV.map((x, i) => `<span><i class="lv lv${i}"></i>${t(x[0], x[1])}</span>`).join('')}</div>`;
+
+/* streaks: a freeze is earned every 7 days in a row (hold up to 2) and is used automatically on a missed day */
+function longestStreak() {
+  const ds = [...new Set([...mem.days, ...mem.freeze.used])].sort(); let best = 0, run = 0, prev = null;
+  ds.forEach(d => { const x = new Date(d + 'T00:00:00Z'); run = prev && (x - prev) === 864e5 ? run + 1 : 1; best = Math.max(best, run); prev = x; });
+  return best;
+}
+(function applyFreeze() {
+  const act = new Set([...mem.days, ...mem.freeze.used]); if (!act.size) return;
+  const d = new Date(); d.setDate(d.getDate() - 1); const miss = [];
+  while (!act.has(d.toISOString().slice(0, 10)) && miss.length < 3) { miss.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() - 1); }
+  if (!miss.length || !act.has(d.toISOString().slice(0, 10)) || miss.length > mem.freeze.n) return;
+  mem.freeze.n -= miss.length; mem.freeze.used.push(...miss); save();
+  setTimeout(() => toast(`Streak freeze used for ${miss.length} missed day${miss.length > 1 ? 's' : ''} / Đã dùng lượt giữ chuỗi`), 900);
+})();
+function onNewDay(d) {
+  const st = streak();
+  if (st > 0 && st % 7 === 0 && mem.freeze.n < 2 && !mem.freeze.earned.includes(d)) { mem.freeze.n++; mem.freeze.earned.push(d); save(); celebrate('freeze'); }
+  checkBadges();
+}
+
+/* badges */
+const sumLog = k => Object.values(mem.log).reduce((a, x) => a + (x[k] || 0), 0);
+const drillSolved = () => Object.values(mem.drill).reduce((a, x) => a + (x.solved || 0), 0);
+const BADGES = [
+  ['first', 'First lesson passed', 'Qua bài đầu tiên', 'Pass any lesson quiz.', 'Vượt qua quiz bất kỳ bài nào.', () => READY.some(l => passed(l.id))],
+  ['perfect', 'Perfect score', 'Điểm tuyệt đối', 'Score 100% on a lesson quiz.', 'Đạt 100% một bài quiz.', () => Object.values(mem.best).some(b => b >= 1)],
+  ['streak3', 'Three in a row', 'Ba ngày liên tiếp', 'Study three days in a row.', 'Học ba ngày liên tiếp.', () => longestStreak() >= 3],
+  ['streak7', 'One full week', 'Trọn một tuần', 'Study seven days in a row.', 'Học bảy ngày liên tiếp.', () => longestStreak() >= 7],
+  ['streak30', 'A month of habit', 'Một tháng thành thói quen', 'Study thirty days in a row.', 'Học ba mươi ngày liên tiếp.', () => longestStreak() >= 30],
+  ['cards100', 'Hundred cards', 'Một trăm thẻ', 'Review 100 flashcards.', 'Ôn 100 lượt flashcard.', () => sumLog('cards') >= 100],
+  ['drill10', 'Warm hands', 'Khởi động', 'Solve 10 drill problems.', 'Giải 10 bài drill.', () => drillSolved() >= 10],
+  ['drill50', 'Number cruncher', 'Tay tính số', 'Solve 50 drill problems.', 'Giải 50 bài drill.', () => drillSolved() >= 50],
+  ['clean5', 'Clean sheet', 'Sạch lưới', 'Solve 5 drills in a row on the first try without a hint.', 'Giải đúng 5 bài drill liên tiếp ngay lần đầu, không dùng gợi ý.', () => (mem.drillRun || {}).best >= 5],
+  ['iv5', 'In the hot seat', 'Ngồi ghế phỏng vấn', 'Answer and score 5 mock interview questions.', 'Trả lời và tự chấm 5 câu phỏng vấn thử.', () => Object.keys(mem.iv).length >= 5],
+  ['ivall', 'Superday ready', 'Sẵn sàng vòng cuối', 'Score 80% or more on every mock interview question.', 'Đạt từ 80% ở mọi câu phỏng vấn thử.', () => window.INTERVIEW.every(q => (mem.iv[q.id] || {}).best >= .8)],
+  ['challenge', 'Mixed up', 'Trộn bài', 'Finish a course challenge.', 'Hoàn thành một bài thử thách tổng hợp.', () => mem.chal.length > 0],
+  ['master1', 'Mastered', 'Tinh thông', 'Bring a lesson to Mastered through a course challenge.', 'Đưa một bài lên mức Tinh thông qua thử thách tổng hợp.', () => READY.some(l => lvl(l.id) >= 4)],
+  ['module', 'Module complete', 'Xong trọn module', 'Reach Proficient on every available lesson in one module.', 'Đạt Thành thạo mọi bài đã có trong một module.', () => COURSE.some(m => { const r = m.lessons.filter(l => LESSONS[l[0]]); return r.length && r.every(l => lvl(l[0]) >= 3); })],
+  ['analyst', 'Promoted to Analyst', 'Lên Chuyên viên', 'Earn 300 XP and leave the intern desk.', 'Đạt 300 XP và rời bàn thực tập sinh.', () => xpTotal() >= 300],
+  ['focus10', 'Deep work', 'Tập trung sâu', 'Complete 10 focus sessions.', 'Hoàn thành 10 phiên tập trung.', () => Object.values(mem.focus).reduce((a, b) => a + b, 0) >= 10]
+];
+function checkBadges(silent) {
+  BADGES.forEach(b => { if (!mem.badges[b[0]] && b[5]()) { mem.badges[b[0]] = today(); if (!silent) celebrate('badge', b); } });
+  save();
+}
+
+/* one-time migration for learners who started before XP existed: credit past work without dating it */
+if (mem.xpBase === undefined) {
+  mem.xpBase = READY.reduce((a, l) => a + (mem.best[l.id] !== undefined ? Math.round(mem.best[l.id] * LESSONS[l.id].quiz.length) * 10 + (passed(l.id) ? 50 : 0) : 0), 0) + sumLog('cards') * 2;
+  READY.forEach(l => { if (mem.best[l.id] !== undefined && !mem.lvl[l.id]) mem.lvl[l.id] = mem.best[l.id] >= 1 ? 3 : passed(l.id) ? 2 : 1; });
+  checkBadges(true); save();
+}
+
+/* celebration card: one at a time, keyboard friendly */
+const celebQ = []; let celebOpen = false;
+function seal(kind) {
+  const glyph = { rank: '<path d="M62 76 l18-12 18 12 M62 92 l18-12 18 12" stroke="#012169" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>', badge: '<path d="M80 62 l6 13 14 2 -10 10 2 14 -12-7 -12 7 2-14 -10-10 14-2z" fill="#012169"/>', freeze: '<path d="M80 60 v40 M63 70 l34 20 M97 70 l-34 20" stroke="#012169" stroke-width="5" stroke-linecap="round"/>' }[kind];
+  return `<svg class="seal" viewBox="0 0 160 160" aria-hidden="true"><circle cx="80" cy="80" r="76" fill="#f2a900"/>${guilloche(80, 80, 66, 24, 30, 120, '#012169', .6, .45)}<circle cx="80" cy="80" r="36" fill="#fff6dc" stroke="#012169" stroke-width="2"/>${glyph}</svg>`;
+}
+function celebrate(kind, data) { celebQ.push([kind, data]); if (!celebOpen) setTimeout(nextCeleb, 350); celebOpen = true; }
+function nextCeleb() {
+  const it = celebQ.shift(); if (!it) { celebOpen = false; return; }
+  const [k, d] = it;
+  const x = k === 'rank' ? { kk: ['New rank', 'Cấp bậc mới'], h: [d[1], d[2]], b: [`You reached ${d[0].toLocaleString('en-US')} XP. Next stop: ${RANKS[rankOf(xpTotal()) + 1] ? RANKS[rankOf(xpTotal()) + 1][1] : 'the top of the ladder'}.`, `Em đã đạt ${d[0].toLocaleString('en-US')} XP.`] }
+    : k === 'badge' ? { kk: ['Badge earned', 'Huy hiệu mới'], h: [d[1], d[2]], b: [d[3], d[4]] }
+    : { kk: ['Reward', 'Phần thưởng'], h: ['Streak freeze earned', 'Nhận một lượt giữ chuỗi'], b: ['Seven days in a row. If you miss a day, a freeze keeps your streak alive automatically. You can hold two.', 'Bảy ngày liên tiếp. Nếu lỡ một ngày, lượt giữ chuỗi sẽ tự động giữ chuỗi cho em. Giữ được tối đa hai lượt.'] };
+  const el = document.createElement('div'); el.className = 'celeb';
+  el.innerHTML = `<div class="celeb-box" role="dialog" aria-modal="true" aria-labelledby="celebH">${seal(k)}<div class="k">${t(x.kk[0], x.kk[1])}</div><h2 id="celebH">${esc(x.h[0])}<span class="tag-vi vi" lang="vi">${esc(x.h[1])}</span></h2>${bi(`<p>${x.b[0]}</p>`, `<p>${x.b[1]}</p>`)}<div class="btns"><button class="btn" id="celebOk">Continue</button>${k !== 'freeze' ? '<a class="btn ghost" href="#progress" id="celebGo">See progress</a>' : ''}</div></div>`;
+  document.body.appendChild(el);
+  const close = () => { el.remove(); setTimeout(nextCeleb, 200); };
+  $('#celebOk', el).onclick = close; const go = $('#celebGo', el); if (go) go.onclick = close;
+  el.addEventListener('click', e => { if (e.target === el) close(); });
+  el.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  $('#celebOk', el).focus();
+}
+
+
 /* keyboard shortcuts help */
 document.addEventListener('keydown', e => {
   if (e.target.matches('input,textarea,select')) return;
   if (e.key === '?') { const m = $('#keys'); m.hidden = !m.hidden; }
   if (e.key === 'Escape') $('#keys').hidden = true;
   if (e.key === 'g') { routes._g = Date.now(); return; }
-  if (routes._g && Date.now() - routes._g < 800) { const map = { h: '#front', c: '#course', l: '#lab', f: '#cards', p: '#review', m: '#review-mistakes', n: '#notes', s: '#glossary', r: '#roadmap', b: '#roadmap-library' }; if (map[e.key]) location.hash = map[e.key]; routes._g = 0; }
+  if (routes._g && Date.now() - routes._g < 800) { const map = { h: '#front', c: '#course', l: '#lab', f: '#cards', p: '#review', m: '#review-mistakes', n: '#notes', s: '#glossary', r: '#roadmap', b: '#roadmap-library', d: '#review-drills', i: '#review-interview', x: '#review-challenge', o: '#progress' }; if (map[e.key]) location.hash = map[e.key]; routes._g = 0; }
 });
 document.addEventListener('click', e => { if (e.target.id === 'keys') e.target.hidden = true; });
 
@@ -288,8 +401,8 @@ routes[''] = function home() {
   </section>
   <section class="strip"><div class="wrap"><div class="stats">
     <div class="stat"><b>${done}/${READY.length}</b><span>${t('lessons passed', 'bài đã qua')}</span></div>
-    <div class="stat"><b>${bests.length ? Math.round(avg * 100) + '%' : '–'}</b><span>${t('average best quiz score', 'điểm quiz trung bình')}</span></div>
-    <div class="stat"><b>${streak()}</b><span>${t('day study streak', 'ngày học liên tiếp')}</span></div>
+    <div class="stat"><b>${Math.round(masteryPct() * 100)}%</b><span>${t('course mastery', 'mức thành thạo khóa học')}</span></div>
+    <div class="stat"><b>${streak()}</b><span>${t('day study streak', 'ngày học liên tiếp')}${mem.freeze.n ? `, ${mem.freeze.n} ❄` : ''}</span></div>
     <div class="stat"><b>${due}</b><span>${t('flashcards due today', 'thẻ cần ôn hôm nay')}</span></div>
   </div></div></section>
   <section class="section band"><div class="wrap">
@@ -305,10 +418,10 @@ routes[''] = function home() {
     <div class="sec-head"><div><h2>${t('How the program works', '')}</h2><span class="tag-vi vi" lang="vi">Chương trình vận hành thế nào</span></div></div>
     <div class="feats">
       <div class="feat">${ic('book')}<h3>${t('Lessons in a fixed order', '')}</h3>${bi('<p>Introduction, explanation, vocabulary, a real company, worked numbers, a quiz, a practice task and a summary. Every lesson, every time.</p>', '<p>Giới thiệu, giải thích, từ vựng, ví dụ công ty thật, ví dụ tính toán, quiz, bài tập và tổng kết. Bài nào cũng vậy.</p>')}</div>
-      <div class="feat">${ic('check')}<h3>${t('Quizzes that gate progress', '')}</h3>${bi('<p>Score 75% to pass. Wrong answers come with an explanation in both languages, and passing unlocks that lesson’s flashcards.</p>', '<p>Đạt 75% để qua bài. Câu sai có giải thích song ngữ, và qua bài sẽ mở flashcard của bài đó.</p>')}</div>
-      <div class="feat">${ic('calc')}<h3>${t('A calculator for every formula', '')}</h3>${bi(`<p>The Lab has ${Object.keys(TOOLS).length} tools, from compound interest to a full DCF, so you can change an input and watch the result move.</p>`, `<p>Lab có ${Object.keys(TOOLS).length} công cụ, từ lãi kép đến định giá DCF, để em đổi số liệu và quan sát kết quả.</p>`)}</div>
-      <div class="feat">${ic('cards')}<h3>${t('Spaced repetition', '')}</h3>${bi('<p>Flashcards return after 1, 3, 7, 14 and 30 days. Review mixes questions from lessons you already passed.</p>', '<p>Flashcard quay lại sau 1, 3, 7, 14 và 30 ngày. Ôn tập trộn câu hỏi từ các bài đã qua.</p>')}</div>
-      <div class="feat">${ic('pen')}<h3>${t('Practice graded by your professor', '')}</h3>${bi('<p>Write your answer, copy it with one click and paste it into your chat with Claude for detailed feedback.</p>', '<p>Viết bài làm, sao chép bằng một nút và dán vào cuộc trò chuyện với Claude để được nhận xét chi tiết.</p>')}</div>
+      <div class="feat">${ic('check')}<h3>${t('Mastery, not just completion', '')}</h3>${bi('<p>Every lesson moves through five levels, from Attempted to Mastered. Quizzes take it to Proficient; only a mixed course challenge can make it Mastered, and a miss there moves it back down.</p>', '<p>Mỗi bài đi qua năm mức, từ Đã thử đến Tinh thông. Quiz đưa bài lên Thành thạo; chỉ thử thách tổng hợp mới đưa lên Tinh thông, và sai ở đó sẽ bị hạ mức.</p>')}</div>
+      <div class="feat">${ic('calc')}<h3>${t('Drills that never run out', '')}</h3>${bi(`<p>${window.DRILLS.length} kinds of numeric problem, from compound interest to accretion and dilution, built from new random numbers every time, with two hints and a worked solution. The Lab adds ${Object.keys(TOOLS).length} calculators.</p>`, `<p>${window.DRILLS.length} dạng bài tính, từ lãi kép đến tăng giảm EPS, mỗi lần một bộ số mới, có hai gợi ý và lời giải. Lab có thêm ${Object.keys(TOOLS).length} máy tính.</p>`)}</div>
+      <div class="feat">${ic('pen')}<h3>${t('Mock investment banking interviews', '')}</h3>${bi(`<p>${window.INTERVIEW.length} questions banks really ask. Answer against the clock, out loud if your browser supports it, then compare with a model answer and score yourself.</p>`, `<p>${window.INTERVIEW.length} câu ngân hàng thật sự hỏi. Trả lời có bấm giờ, nói thành tiếng nếu trình duyệt hỗ trợ, rồi so với câu mẫu và tự chấm.</p>`)}</div>
+      <div class="feat">${ic('cards')}<h3>${t('Spaced repetition and streaks', '')}</h3>${bi('<p>Flashcards return after 1, 3, 7, 14 and 30 days. Every activity earns XP toward a rank from Intern to Managing Director, and seven days in a row earns a streak freeze.</p>', '<p>Flashcard quay lại sau 1, 3, 7, 14 và 30 ngày. Mọi hoạt động đều có XP để lên cấp từ Thực tập sinh đến Giám đốc điều hành, và bảy ngày liên tiếp được một lượt giữ chuỗi.</p>')}</div>
       <div class="feat">${ic('globe')}<h3>${t('English first, Vietnamese beside it', '')}</h3>${bi('<p>Switch between EN + VI, English only or Vietnamese only at the top of every page.</p>', '<p>Chuyển giữa song ngữ, chỉ tiếng Anh hoặc chỉ tiếng Việt ở đầu mỗi trang.</p>')}</div>
     </div>
   </div></section>
@@ -329,14 +442,14 @@ routes[''] = function home() {
 routes.course = function () {
   const openFirst = (READY.find(l => !passed(l.id)) || READY[0]).mod.id;
   main.innerHTML = pageHero('Curriculum', 'Chương trình học', COURSE.length + ' modules in order. A lesson counts as passed when you score 75% or more on its quiz. Lessons marked coming soon will be added as you progress.', COURSE.length + ' module theo thứ tự. Một bài được tính là qua khi em đạt từ 75% bài quiz. Các bài ghi coming soon sẽ được thêm khi em tiến bộ.') +
-  `<section class="section band"><div class="wrap"><div class="modules">${COURSE.map((m, i) => {
+  `<section class="section band"><div class="wrap"><div class="course-mastery"><div><b>${Math.round(masteryPct() * 100)}%</b> ${t('course mastery', 'thành thạo khóa học')}</div>${lvLegend()}<a class="btn small ghost" href="#progress">Your progress</a></div><div class="modules">${COURSE.map((m, i) => {
     const ls = m.lessons, ready = ls.filter(l => LESSONS[l[0]]), dn = ready.filter(l => passed(l[0])).length;
     return `<details class="mod" ${m.id === openFirst ? 'open' : ''}><summary><div class="mno">${i + 1}</div><div><h2>${esc(m.en)}</h2><div class="tag-vi vi" lang="vi" style="font-family:var(--serif);font-style:italic">${esc(m.vi)}</div><p class="q">${t(esc(m.q[0]), esc(m.q[1]))}</p></div>
       <div class="right">${dn}/${ls.length} passed<span class="chev">▾</span><div class="prog"><i style="width:${(dn / ls.length) * 100}%"></i></div></div></summary>
       <ul class="lessons">${ls.map((l, j) => {
         const r = !!LESSONS[l[0]], b = mem.best[l[0]];
         const st = passed(l[0]) ? `<span class="pill done">Passed ${Math.round(b * 100)}%</span>` : r ? (b !== undefined ? `<span class="pill try">Best ${Math.round(b * 100)}%</span>` : `<span class="pill">${LESSONS[l[0]].min} min</span>`) : '<span class="pill">Coming soon</span>';
-        const inner = `<span class="n">${i + 1}.${j + 1}</span><span class="t">${esc(l[1])}<span class="vi" lang="vi">${esc(l[2])}</span></span>${st}`;
+        const inner = `${r ? lvSq(l[0]) : '<span class="lv none"></span>'}<span class="n">${i + 1}.${j + 1}</span><span class="t">${esc(l[1])}<span class="vi" lang="vi">${esc(l[2])}</span></span>${st}`;
         return `<li>${r ? `<a href="#lesson-${l[0]}">${inner}</a>` : `<div class="soon">${inner}</div>`}</li>`;
       }).join('')}</ul></details>`;
   }).join('')}</div></div></section>`;
@@ -411,7 +524,7 @@ routes.lesson = function (id) {
   main.innerHTML = `<section class="page-hero">${heroArt()}<div class="wrap">
     <div class="crumbs"><a href="#course">Curriculum</a> / Module ${meta.mi + 1}: ${esc(meta.mod.en)}</div>
     <h1>${esc(meta.en)}</h1><p class="deck vi" lang="vi">${esc(meta.vi)}</p>
-    <div class="meta"><span>${t(`Lesson ${meta.mi + 1}.${meta.li + 1}`, `Bài ${meta.mi + 1}.${meta.li + 1}`)}</span><span>${t(`About ${L.min} minutes`, `Khoảng ${L.min} phút`)}</span><span>${best !== undefined ? (passed(id) ? `Passed, best ${Math.round(best * 100)}%` : `Best so far ${Math.round(best * 100)}%`) : 'Not attempted'}</span></div>
+    <div class="meta"><span>${t(`Lesson ${meta.mi + 1}.${meta.li + 1}`, `Bài ${meta.mi + 1}.${meta.li + 1}`)}</span><span>${t(`About ${L.min} minutes`, `Khoảng ${L.min} phút`)}</span><span>${best !== undefined ? (passed(id) ? `Passed, best ${Math.round(best * 100)}%` : `Best so far ${Math.round(best * 100)}%`) : 'Not attempted'}</span><span class="mlv">${lvSq(id)}${t(LV[lvl(id)][0], LV[lvl(id)][1])}</span></div>
     ${gate}
   </div></section><div class="wrap">
   <div class="lesson-grid">
@@ -490,10 +603,14 @@ routes.lesson = function (id) {
     mem.best[id] = Math.max(was, r); save(); touchDay();
     const ok = r >= PASS;
     if (ok) L.vocab.forEach(v => { if (!mem.cards[v[0]]) mem.cards[v[0]] = { box: 1, due: today() }; }); save();
+    const att = mem.quizN[id] = (mem.quizN[id] || 0) + 1, [lo, ln] = lessonQuizLvl(id, r);
+    const gain = sc * (att <= 2 ? 10 : 3) + (ok && !wasPass ? 50 : 0) + (r >= 1 && was < 1 ? 25 : 0);
     $('#q-score').innerHTML = `<div class="score"><b>${sc}/${n}</b><div>${ok
       ? bi(`<p style="margin:0"><b>Passed.</b> ${wasPass ? 'Your best score is saved.' : 'This lesson’s vocabulary has been added to your flashcards.'}</p>`, `<p style="margin:0"><b>Đã qua.</b> ${wasPass ? 'Điểm cao nhất đã được lưu.' : 'Từ vựng bài này đã được thêm vào flashcard.'}</p>`)
       : bi('<p style="margin:0">Below 75%. Reread the explanations for the questions you missed, then retry.</p>', '<p style="margin:0">Dưới 75%. Đọc lại giải thích các câu sai rồi làm lại.</p>')}</div>
+      <div class="qx"><span class="xpb">+${gain} XP</span><span class="mlv">${lvSq(id)}${ln !== lo ? `${LV[lo][0]} → <b>${LV[ln][0]}</b>` : LV[ln][0]}</span>${ln === 3 ? `<a href="#review-challenge">${t('Reach Mastered in a course challenge', 'Lên Tinh thông qua thử thách tổng hợp')}</a>` : ''}</div>
       <button class="btn small ghost" id="retry">Retry the quiz</button>${ok && next ? `<a class="btn small" href="#lesson-${next.id}">Next lesson</a>` : ''}</div>`;
+    award(gain);
     $('#retry').onclick = () => { routes.lesson(id); document.getElementById('p-quiz').scrollIntoView(); };
   });
   // highlight toc on scroll
@@ -814,7 +931,7 @@ routes.cards = function () {
     if (!cur) return;
     const c = mem.cards[cur[0]] || { box: 1, due: today() };
     c.box = ok ? Math.min(GAPS.length, c.box + 1) : 1; c.due = addDays(ok ? GAPS[c.box - 1] : 0);
-    mem.cards[cur[0]] = c; dayLog().cards++; save(); queue.shift();
+    mem.cards[cur[0]] = c; dayLog().cards++; save(); award(2, true); queue.shift();
     if (!ok) queue.push(cur);
     show();
   };
@@ -827,34 +944,263 @@ routes.cards = function () {
 };
 document.addEventListener('keydown', e => { if (/^#\/?cards/.test(location.hash) && routes.cards.key) routes.cards.key(e); });
 
-/* ---------- practice: mixed review + mistake notebook ---------- */
+/* ---------- practice: mixed review, course challenge, drills, mock interview, mistake notebook ---------- */
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const lnum = l => `${l.mi + 1}.${l.li + 1}`;
+const PTABS = [['mixed', '#review', 'Mixed review', 'Ôn tổng hợp'], ['challenge', '#review-challenge', 'Course challenge', 'Thử thách tổng hợp'], ['drills', '#review-drills', 'Drills', 'Luyện tính'], ['interview', '#review-interview', 'Mock interview', 'Phỏng vấn thử'], ['mistakes', '#review-mistakes', 'Mistake notebook', 'Sổ lỗi sai']];
+const PINTRO = {
+  mixed: ['Six questions pulled at random from lessons you have attempted. Short, mixed retrieval like this is what keeps ideas from fading.', 'Sáu câu lấy ngẫu nhiên từ các bài em đã làm. Truy hồi ngắn và trộn lẫn như vậy giúp kiến thức không phai.'],
+  challenge: ['One or two questions from every lesson you have started, shuffled together. Get all of a lesson’s questions right to move it up a mastery level; miss one and it moves down. This is the only way to reach Mastered.', 'Một hoặc hai câu từ mỗi bài em đã học, trộn lẫn. Đúng hết các câu của một bài thì bài đó lên một mức thành thạo; sai một câu thì xuống một mức. Đây là cách duy nhất để đạt Tinh thông.'],
+  drills: ['Endless numeric problems built from fresh random numbers each time. Try first, take a hint only if you are stuck, and read the worked solution even when you are right. Fewer hints earn more XP.', 'Bài tính không giới hạn, mỗi lần một bộ số ngẫu nhiên mới. Tự làm trước, chỉ xem gợi ý khi bí, và đọc lời giải kể cả khi làm đúng. Dùng ít gợi ý được nhiều XP hơn.'],
+  interview: ['The questions investment banks really ask. Answer out loud or in writing, against the clock, then compare with a model answer and tick the points you covered.', 'Những câu ngân hàng đầu tư thật sự hỏi. Trả lời thành tiếng hoặc viết ra, có bấm giờ, rồi so với câu trả lời mẫu và đánh dấu các ý em đã nêu.'],
+  mistakes: ['Every question you got wrong, hardest first. A question leaves the notebook after you answer it correctly twice in a row.', 'Mọi câu em làm sai, câu khó nhất trước. Câu hỏi rời sổ khi em trả lời đúng hai lần liên tiếp.']
+};
 routes.review = function (tab) {
   touchDay();
-  tab = tab === 'mistakes' ? 'mistakes' : 'mixed';
+  tab = PTABS.some(x => x[0] === tab) ? tab : 'mixed';
   const mk = mistakeList();
-  const head = pageHero('Practice', 'Luyện tập', 'Mixed review pulls questions from lessons you have attempted. The mistake notebook collects every question you got wrong; a question leaves the notebook after you answer it correctly twice in a row.', 'Ôn tập tổng hợp lấy câu hỏi từ các bài em đã làm. Sổ lỗi sai lưu mọi câu em trả lời sai; câu hỏi rời sổ khi em trả lời đúng hai lần liên tiếp.',
-    `<div class="tabs"><a href="#review" class="${tab === 'mixed' ? 'on' : ''}">${t('Mixed review', 'Ôn tổng hợp')}</a><a href="#review-mistakes" class="${tab === 'mistakes' ? 'on' : ''}">${t('Mistake notebook', 'Sổ lỗi sai')} <span class="cnt">${mk.length}</span></a></div>`);
-  if (tab === 'mistakes') {
-    if (!mk.length) { main.innerHTML = `${head}<div class="wrap section"><div class="empty">${t('No mistakes saved. Questions you answer wrong in any quiz will appear here for retesting.', 'Chưa có lỗi sai. Câu em làm sai trong quiz sẽ xuất hiện ở đây để làm lại.')}</div></div>`; return; }
-    const qs = mk.sort((a, b) => b.n - a.n).map(m => { const l = byId(m.lid); return Object.assign([...LESSONS[m.lid].quiz[m.qi]], { lid: m.lid, qi: m.qi, src: `Lesson ${l.mi + 1}.${l.li + 1}, missed ${m.n}×${m.streak ? `, ${m.streak} correct in a row` : ''}` }); });
-    main.innerHTML = `${head}<div class="wrap section"><p class="kbd">${t(`${qs.length} question${qs.length > 1 ? 's' : ''} to fix, hardest first.`, `${qs.length} câu cần sửa, câu khó nhất trước.`)}</p><div id="rv">${quizHTML(qs, 'r')}</div></div>`;
-    wireQuiz($('#rv'), qs, 'r', (sc, n) => {
-      dayLog().retest++; save();
-      $('#r-score').innerHTML = `<div class="score"><b>${sc}/${n}</b><div>${bi(`<p style="margin:0">${mistakeList().length} question(s) still in the notebook.</p>`, `<p style="margin:0">Còn ${mistakeList().length} câu trong sổ.</p>`)}</div><button class="btn small" id="again-r">Retest again</button></div>`;
-      $('#again-r').onclick = () => routes.review('mistakes');
-    });
-    return;
-  }
+  const head = pageHero('Practice', 'Luyện tập', PINTRO[tab][0], PINTRO[tab][1],
+    `<div class="tabs">${PTABS.map(x => `<a href="${x[1]}" class="${tab === x[0] ? 'on' : ''}">${t(x[2], x[3])}${x[0] === 'mistakes' ? ` <span class="cnt">${mk.length}</span>` : ''}</a>`).join('')}</div>`);
+  ({ mixed: mixedPage, challenge: challengePage, drills: drillsPage, interview: interviewPage, mistakes: mistakesPage })[tab](head, mk);
+};
+function mistakesPage(head, mk) {
+  if (!mk.length) { main.innerHTML = `${head}<div class="wrap section"><div class="empty">${t('No mistakes saved. Questions you answer wrong in any quiz will appear here for retesting.', 'Chưa có lỗi sai. Câu em làm sai trong quiz sẽ xuất hiện ở đây để làm lại.')}</div></div>`; return; }
+  const qs = mk.sort((a, b) => b.n - a.n).map(m => { const l = byId(m.lid); return Object.assign([...LESSONS[m.lid].quiz[m.qi]], { lid: m.lid, qi: m.qi, src: `Lesson ${lnum(l)}, missed ${m.n}×${m.streak ? `, ${m.streak} correct in a row` : ''}` }); });
+  main.innerHTML = `${head}<div class="wrap section"><p class="kbd">${t(`${qs.length} question${qs.length > 1 ? 's' : ''} to fix, hardest first.`, `${qs.length} câu cần sửa, câu khó nhất trước.`)}</p><div id="rv">${quizHTML(qs, 'r')}</div></div>`;
+  wireQuiz($('#rv'), qs, 'r', (sc, n) => {
+    dayLog().retest++; save(); award(sc * 8);
+    $('#r-score').innerHTML = `<div class="score"><b>${sc}/${n}</b><div>${bi(`<p style="margin:0">${mistakeList().length} question(s) still in the notebook. +${sc * 8} XP</p>`, `<p style="margin:0">Còn ${mistakeList().length} câu trong sổ.</p>`)}</div><button class="btn small" id="again-r">Retest again</button></div>`;
+    $('#again-r').onclick = () => routes.review('mistakes');
+  });
+}
+function mixedPage(head) {
   const pool = READY.filter(l => mem.best[l.id] !== undefined);
   if (!pool.length) { main.innerHTML = `${head}<div class="wrap section"><div class="empty">${t('Attempt at least one lesson quiz first.', 'Hãy làm ít nhất một bài quiz trước.')} <a href="#lesson-${READY[0].id}">Start lesson 1</a></div></div>`; return; }
-  const qs = pool.flatMap(l => LESSONS[l.id].quiz.map((q, qi) => Object.assign([...q], { lid: l.id, qi, src: `Lesson ${l.mi + 1}.${l.li + 1}` }))).sort(() => Math.random() - .5).slice(0, 6);
+  const qs = shuffle(pool.flatMap(l => LESSONS[l.id].quiz.map((q, qi) => Object.assign([...q], { lid: l.id, qi, src: `Lesson ${lnum(l)}` })))).slice(0, 6);
   const hist = mem.reviews.slice(-8);
   main.innerHTML = `${head}<div class="wrap section">${hist.length ? `<p class="kbd">${t('Recent review scores', 'Điểm ôn gần đây')}: ${hist.map(h => Math.round(h.s * 100) + '%').join(', ')}</p>` : ''}<div id="rv" style="padding-top:12px">${quizHTML(qs, 'r')}</div></div>`;
   wireQuiz($('#rv'), qs, 'r', (sc, n) => {
-    mem.reviews.push({ d: today(), s: sc / n }); dayLog().quiz++; save();
-    $('#r-score').innerHTML = `<div class="score"><b>${sc}/${n}</b><div>${bi(`<p style="margin:0">${sc / n >= PASS ? 'Solid retention.' : 'Some ideas are fading. Missed questions were added to your mistake notebook.'}</p>`, `<p style="margin:0">${sc / n >= PASS ? 'Ghi nhớ tốt.' : 'Một số ý đang bị quên. Câu sai đã được thêm vào sổ lỗi sai.'}</p>`)}</div><button class="btn small" id="again-r">New set</button></div>`;
+    mem.reviews.push({ d: today(), s: sc / n }); dayLog().quiz++; save(); award(sc * 8);
+    $('#r-score').innerHTML = `<div class="score"><b>${sc}/${n}</b><div>${bi(`<p style="margin:0">${sc / n >= PASS ? 'Solid retention.' : 'Some ideas are fading. Missed questions were added to your mistake notebook.'} +${sc * 8} XP</p>`, `<p style="margin:0">${sc / n >= PASS ? 'Ghi nhớ tốt.' : 'Một số ý đang bị quên. Câu sai đã được thêm vào sổ lỗi sai.'}</p>`)}</div><button class="btn small" id="again-r">New set</button></div>`;
     $('#again-r').onclick = () => routes.review();
   });
+}
+
+/* course challenge: interleaved questions across lessons, moves mastery levels both ways */
+function challengePage(head) {
+  const pool = READY.filter(l => lvl(l.id) >= 1);
+  if (pool.length < 3) { main.innerHTML = `${head}<div class="wrap section">${lvLegend()}<div class="empty">${t(`Start at least three lessons first (you have ${pool.length}). The challenge mixes questions across lessons, so it needs a few to mix.`, `Hãy học ít nhất ba bài trước (em đang có ${pool.length}). Thử thách trộn câu hỏi giữa các bài nên cần vài bài để trộn.`)}</div></div>`; return; }
+  const per = pool.length <= 6 ? 2 : 1;
+  const qs = shuffle(pool.flatMap(l => shuffle(LESSONS[l.id].quiz.map((q, qi) => qi)).slice(0, per).map(qi => Object.assign([...LESSONS[l.id].quiz[qi]], { lid: l.id, qi, src: `Lesson ${lnum(l)}` })))).slice(0, 12);
+  const lids = [...new Set(qs.map(q => q.lid))];
+  main.innerHTML = `${head}<div class="wrap section">
+    <div class="chal-top"><div>${lvLegend()}<p class="kbd">${t(`${qs.length} questions from ${lids.length} lessons. Course mastery now ${Math.round(masteryPct() * 100)}%.`, `${qs.length} câu từ ${lids.length} bài. Mức thành thạo khóa học hiện tại ${Math.round(masteryPct() * 100)}%.`)}</p></div>
+    <div class="chal-l">${lids.map(id => { const l = byId(id); return `<span>${lvSq(id)}${lnum(l)}</span>`; }).join('')}</div></div>
+    <div id="rv">${quizHTML(qs, 'r')}</div></div>`;
+  wireQuiz($('#rv'), qs, 'r', (sc, n, ans) => {
+    const ch = lids.map(id => {
+      const mine = qs.map((q, i) => [q, i]).filter(([q]) => q.lid === id), ok = mine.every(([q, i]) => ans[i] === q[3]), c = lvl(id);
+      return [id, ...setLvl(id, ok ? (c <= 1 ? 2 : c + 1) : (c >= 2 ? c - 1 : c))];
+    });
+    mem.chal.push({ d: today(), s: sc / n }); dayLog().quiz++; save(); award(sc * 15);
+    $('#r-score').innerHTML = `<div class="score chal-res"><b>${sc}/${n}</b><div><p style="margin:0 0 10px">${t(`+${sc * 15} XP. Course mastery is now ${Math.round(masteryPct() * 100)}%.`, `Mức thành thạo khóa học: ${Math.round(masteryPct() * 100)}%.`)}</p>
+      <ul class="lvch">${ch.map(([id, o, v]) => { const l = byId(id); return `<li><a href="#lesson-${id}">${lnum(l)} ${esc(l.en)}</a><span>${LV[o][0]}</span><span class="arr ${v > o ? 'up' : v < o ? 'down' : ''}">${v > o ? '▲' : v < o ? '▼' : '='}</span><span>${lvSq(id)}${LV[v][0]}</span></li>`; }).join('')}</ul></div>
+      <button class="btn small" id="again-r">New challenge</button></div>`;
+    $('#again-r').onclick = () => routes.review('challenge');
+  });
+}
+
+/* drills: Brilliant-style generated problems with two hints and a worked solution */
+const RNG = { int: (a, b) => a + Math.floor(Math.random() * (b - a + 1)), pick: a => a[Math.floor(Math.random() * a.length)] };
+const parseNum = s => { const v = String(s).replace(/[−–]/g, '-').replace(/[,\s%$]/g, '').replace(/[^0-9.+-]/g, ''); return v === '' || v === '-' ? NaN : parseFloat(v); };
+function drillsPage(head) {
+  const D = window.DRILLS, SET = 5;
+  let type = mem.drillType && (mem.drillType === 'mix' || D.some(d => d.id === mem.drillType)) ? mem.drillType : 'mix';
+  let cur, P, hints, tries, done, shown, set = { n: 0, first: 0, xp: 0 }, lastId = null;
+  main.innerHTML = `${head}<div class="wrap section"><div class="drill-grid"><div><div class="drill-card" id="dc" aria-live="polite"></div></div>
+    <aside class="drill-side"><h3 class="sub">${t('Choose a skill', 'Chọn kỹ năng')}</h3><div class="dtypes" id="dtypes"></div>
+    <p class="kbd">${t('Mixed shuffles skills from lessons you have started. Switching between problem types is harder than repeating one, and that is why it works better.', 'Trộn lẫn sẽ xáo các kỹ năng từ những bài em đã học. Chuyển qua lại giữa các dạng bài khó hơn lặp một dạng, và chính vì thế hiệu quả hơn.')}</p>
+    <p class="kbd">${t('Keys: Enter checks or moves on, H shows a hint.', 'Phím: Enter để kiểm tra hoặc sang bài, H để xem gợi ý.')}</p></aside></div></div>`;
+  const acc = id => { const s = mem.drill[id]; return s && s.n ? Math.round(s.first / s.n * 100) + '%' : '–'; };
+  const drawTypes = () => {
+    $('#dtypes').innerHTML = [['mix', 'Mixed', 'Trộn lẫn', null]].concat(D.map(d => [d.id, d.en, d.vi, d.lid])).map(([id, en, vi, lid]) => { const l = lid && byId(lid);
+      return `<button class="dtype ${type === id ? 'on' : ''}" data-t="${id}"><span>${t(en, vi)}${l ? `<small>Lesson ${lnum(l)}</small>` : ''}</span><b>${id === 'mix' ? '' : acc(id)}</b></button>`; }).join('');
+    $$('.dtype').forEach(b => b.onclick = () => { type = b.dataset.t; mem.drillType = type; save(); set = { n: 0, first: 0, xp: 0 }; drawTypes(); next(); });
+  };
+  const choose = () => {
+    if (type !== 'mix') return D.find(d => d.id === type);
+    let pool = D.filter(d => mem.best[d.lid] !== undefined); if (pool.length < 3) pool = D;
+    const c = pool.filter(d => d.id !== lastId); return RNG.pick(c.length ? c : pool);
+  };
+  const next = () => {
+    if (set.n >= SET) return summary();
+    cur = choose(); lastId = cur.id; P = cur.gen(RNG); hints = 0; tries = 0; done = false; shown = false;
+    const l = byId(cur.lid);
+    $('#dc').innerHTML = `<div class="dmeta"><span class="pill">${esc(cur.en)}</span><a href="#lesson-${cur.lid}">${t(`Lesson ${lnum(l)}`, `Bài ${lnum(l)}`)}</a><span class="dots">${Array.from({ length: SET }, (_, i) => `<i class="${i < set.n ? 'f' : i === set.n ? 'c' : ''}"></i>`).join('')}</span></div>
+      ${bi(`<p class="dq">${P.q[0]}</p>`, `<p class="dq">${P.q[1]}</p>`)}
+      <form class="dans" id="df" autocomplete="off"><label class="sr" for="dx">Your answer</label><input id="dx" inputmode="decimal" placeholder="?"><span class="unit">${esc(P.unit)}</span><button class="btn" type="submit" id="dgo">Check</button></form>
+      <p class="kbd">${t('Answers within normal rounding are accepted.', 'Đáp án làm tròn hợp lý đều được chấp nhận.')}</p>
+      <div id="dfb"></div><div class="dhints" id="dh"></div>
+      <div class="btns"><button class="btn small ghost" id="dhint" type="button">Hint 1 of 2</button><button class="btn small ghost" id="dsol" type="button">Show solution</button></div>`;
+    $('#df').onsubmit = e => { e.preventDefault(); done ? next() : check(); };
+    $('#dhint').onclick = hint; $('#dsol').onclick = reveal;
+    $('#dx').focus();
+  };
+  const stat = () => (mem.drill[cur.id] = mem.drill[cur.id] || { n: 0, first: 0, solved: 0 });
+  const finish = (ok, xp) => {
+    done = true; set.n++; if (xp) set.xp += xp;
+    const s = stat(); if (ok) s.solved++; dayLog().drill = (dayLog().drill || 0) + 1; save();
+    $('#dgo').textContent = set.n >= SET ? 'Finish set' : 'Next problem'; $('#dx').readOnly = true; $('#dgo').focus();
+    $('#dhint').disabled = true; $('#dsol').disabled = true;
+    drawTypes();
+  };
+  const check = () => {
+    const x = parseNum($('#dx').value);
+    if (isNaN(x)) { $('#dfb').innerHTML = `<div class="explain bad">${t('Type a number first.', 'Hãy nhập một con số.')}</div>`; return; }
+    tries++;
+    const ok = Math.abs(x - P.a) <= Math.max(P.tol || 0, (P.rel || 0) * Math.abs(P.a)) + 1e-9;
+    if (tries === 1) { const s = stat(); s.n++; if (ok && !hints) s.first++; if (ok && !hints) set.first++; const r = mem.drillRun = mem.drillRun || { cur: 0, best: 0 }; r.cur = ok && !hints ? r.cur + 1 : 0; r.best = Math.max(r.best, r.cur); save(); }
+    if (ok) {
+      const xp = shown ? 0 : [15, 10, 5][hints];
+      $('#dfb').innerHTML = `<div class="explain"><strong>${t('Correct.', 'Chính xác.')}</strong> ${bi(P.sol[0], P.sol[1])}</div>`;
+      $('#df').classList.add('ok'); finish(true, xp); if (xp) award(xp);
+    } else {
+      const sign = Math.sign(x) !== Math.sign(P.a) && P.a !== 0;
+      $('#dfb').innerHTML = `<div class="explain bad"><strong>${t('Not yet.', 'Chưa đúng.')}</strong> ${sign ? t('Check the sign: is this an increase or a decrease?', 'Kiểm tra dấu: tăng hay giảm?') : tries >= 2 && hints < 2 ? t('Take a hint; there is no shame in it.', 'Xem gợi ý đi, không sao cả.') : t('Try again.', 'Thử lại.')}</div>`;
+      const f = $('#df'); f.classList.remove('shake'); void f.offsetWidth; f.classList.add('shake'); $('#dx').select();
+    }
+  };
+  const hint = () => {
+    if (done || hints >= 2) return; hints++;
+    $('#dh').insertAdjacentHTML('beforeend', `<div class="hint"><span class="k">${t(`Hint ${hints}`, `Gợi ý ${hints}`)}</span>${bi(`<p>${P.h[hints - 1][0]}</p>`, `<p>${P.h[hints - 1][1]}</p>`)}</div>`);
+    $('#dhint').textContent = hints < 2 ? 'Hint 2 of 2' : 'No more hints'; $('#dhint').disabled = hints >= 2; $('#dx').focus();
+  };
+  const reveal = () => {
+    if (done) return; shown = true;
+    if (!tries) { const s = stat(); s.n++; if (mem.drillRun) mem.drillRun.cur = 0; save(); }
+    $('#dfb').innerHTML = `<div class="explain bad"><strong>${t('Worked solution.', 'Lời giải.')}</strong> ${bi(P.sol[0], P.sol[1])}</div>`;
+    $('#dx').value = Math.round(P.a * 100) / 100; finish(false, 0);
+  };
+  const summary = () => {
+    $('#dc').innerHTML = `<div class="dsum"><h3>${t('Set complete', 'Hoàn thành bộ bài')}</h3><div class="big">${set.first}/${SET}</div><p>${t(`right on the first try without hints, +${set.xp} XP`, `đúng ngay lần đầu không gợi ý, +${set.xp} XP`)}</p>
+      ${bi(`<p>${set.first >= 4 ? 'Strong. Switch to Mixed, or pick a skill you have not tried yet.' : 'Read the worked solutions again, then run another set of the same skill.'}</p>`, `<p>${set.first >= 4 ? 'Tốt lắm. Chuyển sang Trộn lẫn, hoặc chọn kỹ năng em chưa thử.' : 'Đọc lại lời giải, rồi làm thêm một bộ cùng kỹ năng.'}</p>`)}
+      <div class="btns"><button class="btn" id="dnew">New set</button></div></div>`;
+    set = { n: 0, first: 0, xp: 0 }; $('#dnew').onclick = next; $('#dnew').focus();
+  };
+  routes.review.key = e => {
+    if (!$('#dc')) return;
+    if ((e.key === 'h' || e.key === 'H') && !e.target.matches('textarea')) { if (e.target.id === 'dx' || !e.target.matches('input')) { e.preventDefault(); hint(); } }
+  };
+  drawTypes(); next();
+}
+document.addEventListener('keydown', e => { if (/^#\/?review-drills/.test(location.hash) && routes.review.key) routes.review.key(e); });
+
+/* mock interview: timer, optional dictation, model answer, self-scored checklist */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function interviewPage(head) {
+  const Q = window.INTERVIEW, cats = [...new Set(Q.map(q => q.cat))];
+  let id = Q.some(q => q.id === mem.ivCur) ? mem.ivCur : Q[0].id, timer = null, t0 = 0, rec = null;
+  main.innerHTML = `${head}<div class="wrap section"><div class="iv-grid"><aside class="iv-list" id="ivl"></aside><div id="ivm"></div></div></div>`;
+  const sc = q => mem.iv[q.id] ? Math.round(mem.iv[q.id].best * 100) + '%' : '';
+  const drawList = () => {
+    $('#ivl').innerHTML = cats.map(c => `<h3 class="k">${esc(c)}</h3>${Q.filter(q => q.cat === c).map(q => `<button class="ivq ${q.id === id ? 'on' : ''} ${mem.iv[q.id] && mem.iv[q.id].best >= .8 ? 'good' : ''}" data-q="${q.id}"><span>${esc(q.q[0])}</span><b>${sc(q)}</b></button>`).join('')}`).join('') +
+      `<p class="kbd" style="margin-top:14px">${t(`${Object.keys(mem.iv).length} of ${Q.length} answered`, `Đã trả lời ${Object.keys(mem.iv).length}/${Q.length}`)}</p>`;
+    $$('.ivq').forEach(b => b.onclick = () => { stop(); id = b.dataset.q; mem.ivCur = id; save(); drawList(); draw(); });
+  };
+  const stop = () => { clearInterval(timer); timer = null; if (rec) { try { rec.stop(); } catch (e) {} rec = null; } if (window.speechSynthesis) speechSynthesis.cancel(); };
+  const clock = () => { const s = Math.floor((Date.now() - t0) / 1000), el = $('#ivt'); if (!el) return stop(); el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); el.className = 'ivt on ' + (s >= 120 ? 'late' : s >= 60 ? 'warn' : ''); };
+  const draw = () => {
+    const q = Q.find(x => x.id === id), l = byId(q.lid), r = mem.iv[id];
+    mem.ivDraft = mem.ivDraft || {};
+    $('#ivm').innerHTML = `<div class="iv-card"><div class="dmeta"><span class="pill">${esc(q.cat)}</span><a href="#lesson-${q.lid}">${t(`Taught in lesson ${lnum(l)}`, `Học ở bài ${lnum(l)}`)}</a>${r ? `<span class="pill done">Best ${Math.round(r.best * 100)}%</span>` : ''}</div>
+      <h2 class="ivh">“${esc(q.q[0])}”<span class="tag-vi vi" lang="vi">${esc(q.q[1])}</span></h2>
+      ${mem.best[q.lid] === undefined ? `<p class="vnote">${t(`You have not studied lesson ${lnum(l)} yet. Try it anyway, or read the lesson first.`, `Em chưa học bài ${lnum(l)}. Cứ thử, hoặc đọc bài trước.`)}</p>` : ''}
+      <details class="ivtip"><summary>${t('How to structure it', 'Cách sắp xếp câu trả lời')}</summary>${bi(`<p>${q.tip[0]}</p>`, `<p>${q.tip[1]}</p>`)}</details>
+      <div class="ivbar"><button class="btn small" id="ivstart">Start the clock</button><span class="ivt" id="ivt">0:00</span>${SR ? '<button class="btn small ghost" id="ivmic" aria-pressed="false">Answer out loud</button>' : ''}<span class="kbd">${t('Aim for 60 to 90 seconds.', 'Nhắm 60 đến 90 giây.')}</span></div>
+      <label class="kbd" for="iva">${t('Your answer (typed, or dictated in English)', 'Câu trả lời (gõ, hoặc đọc bằng tiếng Anh)')}</label>
+      <textarea id="iva" placeholder="Answer as you would in the room…">${esc(mem.ivDraft[id] || '')}</textarea>
+      <div class="btns"><button class="btn navy" id="ivrev">Reveal the model answer</button></div>
+      <div id="ivres"></div></div>`;
+    $('#iva').oninput = e => { mem.ivDraft[id] = e.target.value; save(); };
+    $('#ivstart').onclick = () => { if (timer) { stop(); $('#ivstart').textContent = 'Start the clock'; return; } t0 = Date.now(); timer = setInterval(clock, 250); clock(); $('#ivstart').textContent = 'Stop the clock'; $('#iva').focus(); };
+    if (SR) $('#ivmic').onclick = () => {
+      const b = $('#ivmic');
+      if (rec) { try { rec.stop(); } catch (e) {} rec = null; b.setAttribute('aria-pressed', 'false'); b.textContent = 'Answer out loud'; return; }
+      try {
+        rec = new SR(); rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = false;
+        const base = $('#iva').value ? $('#iva').value.trimEnd() + ' ' : '';
+        let said = '';
+        rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) said += e.results[i][0].transcript.trim() + ' '; $('#iva').value = base + said; mem.ivDraft[id] = $('#iva').value; save(); };
+        rec.onerror = e => { toast(e.error === 'not-allowed' ? 'Microphone blocked: allow it in the browser, or type instead' : 'Dictation stopped / Đã dừng ghi âm'); };
+        rec.onend = () => { rec = null; const bb = $('#ivmic'); if (bb) { bb.setAttribute('aria-pressed', 'false'); bb.textContent = 'Answer out loud'; } };
+        rec.start(); b.setAttribute('aria-pressed', 'true'); b.textContent = 'Stop recording';
+        if (!timer) $('#ivstart').click();
+      } catch (e) { rec = null; toast('Dictation is not available here; type your answer instead'); }
+    };
+    $('#ivrev').onclick = () => {
+      const secs = timer ? Math.floor((Date.now() - t0) / 1000) : 0; stop();
+      if (timer === null && $('#ivstart')) $('#ivstart').textContent = 'Start the clock';
+      $('#ivrev').hidden = true;
+      $('#ivres').innerHTML = `<div class="ivmodel"><div class="k">${t('Model answer', 'Câu trả lời mẫu')}${'speechSynthesis' in window ? ' <button class="linkish" id="ivsay">Listen</button>' : ''}</div>${bi(`<p>${q.model[0]}</p>`, `<p>${q.model[1]}</p>`)}</div>
+        <h3 class="sub">${t('Tick what your answer covered', 'Đánh dấu những ý em đã nêu')}</h3>
+        <ul class="ivpts">${q.pts.map((p, i) => `<li><label><input type="checkbox" data-p="${i}"><span>${t(p[0], p[1])}</span></label></li>`).join('')}</ul>
+        ${secs ? `<p class="kbd">${t(`You took ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}.`, `Em mất ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}.`)} ${secs > 120 ? t('Too long for a technical answer; trim it.', 'Quá dài; hãy rút gọn.') : ''}</p>` : ''}
+        <div class="btns"><button class="btn" id="ivscore">Score my answer</button><button class="btn ghost" id="ivcopy">Copy for Claude’s feedback</button></div><div id="ivout"></div>`;
+      const say = $('#ivsay'); if (say) say.onclick = () => { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(q.model[0]); u.lang = 'en-US'; u.rate = .95; speechSynthesis.speak(u); };
+      $('#ivscore').onclick = () => {
+        const n = $$('.ivpts input:checked').length, s = n / q.pts.length, prev = mem.iv[id];
+        const fresh = !prev || prev.d !== today();
+        mem.iv[id] = { best: Math.max(prev ? prev.best : 0, s), last: s, d: today(), n: (prev ? prev.n : 0) + 1 }; save();
+        if (fresh) award(n * 5);
+        $('#ivout').innerHTML = `<div class="score"><b>${Math.round(s * 100)}%</b><div>${bi(`<p style="margin:0">${s >= .8 ? 'Interview-ready on this one. Say it again tomorrow without notes.' : 'Reread the model answer, then answer again from memory.'}${fresh ? ` +${n * 5} XP` : ''}</p>`, `<p style="margin:0">${s >= .8 ? 'Câu này đã sẵn sàng. Ngày mai nói lại không cần ghi chú.' : 'Đọc lại câu mẫu, rồi trả lời lại theo trí nhớ.'}</p>`)}</div><button class="btn small ghost" id="ivagain">Try again</button>${(() => { const nx = Q[(Q.findIndex(x => x.id === id) + 1) % Q.length]; return `<button class="btn small" id="ivnext" data-q="${nx.id}">Next question</button>`; })()}</div>`;
+        $('#ivagain').onclick = () => draw();
+        $('#ivnext').onclick = () => { id = $('#ivnext').dataset.q; mem.ivCur = id; save(); drawList(); draw(); window.scrollTo(0, $('#ivm').offsetTop - 80); };
+        drawList();
+      };
+      $('#ivcopy').onclick = () => { const a = ($('#iva').value || '').trim(); if (!a) { toast('Write or dictate your answer first / Hãy trả lời trước'); return; } copy(`Professor, please grade my mock investment banking interview answer like a real interviewer would. Be strict about accuracy, structure and my English.\n\nQuestion: ${q.q[0]}\n\nMy answer:\n${a}`); };
+    };
+  };
+  routes.review.stop = stop;
+  drawList(); draw();
+}
+window.addEventListener('hashchange', () => { if (routes.review.stop) { routes.review.stop(); routes.review.stop = null; } });
+
+/* ---------- progress page ---------- */
+routes.progress = function () {
+  touchDay();
+  const x = xpTotal(), ri = rankOf(x), r = RANKS[ri], nx = RANKS[ri + 1], into = nx ? (x - r[0]) / (nx[0] - r[0]) : 1;
+  const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - 13 + i); const k = d.toISOString().slice(0, 10); return [k, mem.xp[k] || 0]; });
+  const mx = Math.max(50, ...days.map(d => d[1]));
+  const bars = `<svg class="xpbars" viewBox="0 0 560 170" role="img" aria-label="XP earned per day, last 14 days">${days.map(([k, v], i) => { const h = v / mx * 120, X = 14 + i * 39; return `<rect x="${X}" y="${136 - h}" width="26" height="${Math.max(h, v ? 2 : 0)}" rx="3" class="${k === today() ? 'now' : ''}"><title>${k}: ${v} XP</title></rect><text x="${X + 13}" y="156" text-anchor="middle">${+k.slice(8)}</text>${v ? `<text x="${X + 13}" y="${130 - h}" text-anchor="middle" class="v">${v}</text>` : ''}`; }).join('')}<line x1="8" x2="552" y1="136" y2="136"/></svg>`;
+  const ivN = Object.keys(mem.iv).length, ivAvg = ivN ? Object.values(mem.iv).reduce((a, b) => a + b.best, 0) / ivN : 0;
+  main.innerHTML = pageHero('Your progress', 'Tiến độ của em', 'Everything you have done on FinanceBoy in one place: your rank, your streak, how well you know each lesson and which skills still need work.', 'Mọi thứ em đã làm trên FinanceBoy ở một chỗ: cấp bậc, chuỗi ngày học, mức nắm vững từng bài và kỹ năng còn cần luyện.') + `<div class="wrap section">
+    <div class="pg-top">
+      <div class="rank-card">${seal('rank')}<div><div class="k">${t('Rank', 'Cấp bậc')}</div><h2>${r[1]}<span class="tag-vi vi" lang="vi">${r[2]}</span></h2>
+        <p class="kbd">${x.toLocaleString('en-US')} XP${nx ? `, ${(nx[0] - x).toLocaleString('en-US')} to ${nx[1]}` : ', top of the ladder'}</p><div class="prog gold"><i style="width:${into * 100}%"></i></div>
+        <ol class="ladder">${RANKS.map((k, i) => `<li class="${i < ri ? 'past' : i === ri ? 'now' : ''}" title="${k[0]} XP">${k[1]}</li>`).join('')}</ol></div></div>
+      <div class="streak-card"><div class="k">${t('Streak', 'Chuỗi ngày học')}</div><div class="big">${streak()}<small> ${t('days', 'ngày')}</small></div>
+        <p class="kbd">${t(`Longest ${longestStreak()} days`, `Dài nhất ${longestStreak()} ngày`)}</p>
+        <div class="frz">${[0, 1].map(i => `<span class="${i < mem.freeze.n ? 'on' : ''}" title="Streak freeze"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M3.5 7l17 10M20.5 7l-17 10"/></svg></span>`).join('')}<span class="kbd">${t(`${mem.freeze.n} of 2 freezes. Earn one every 7 days in a row.`, `${mem.freeze.n}/2 lượt giữ chuỗi. Mỗi 7 ngày liên tiếp được một lượt.`)}</span></div></div>
+    </div>
+    <div class="sec-head" style="margin-top:44px"><div><h2>${t('XP, last 14 days', '')}</h2><span class="tag-vi vi" lang="vi">XP 14 ngày qua</span></div><span class="kbd">${t(`Today ${xpToday()} XP`, `Hôm nay ${xpToday()} XP`)}</span></div>
+    <div class="panel-w">${bars}</div>
+    <div class="sec-head" style="margin-top:44px"><div><h2>${t('Course mastery', '')}</h2><span class="tag-vi vi" lang="vi">Mức nắm vững khóa học</span></div><span class="kbd">${Math.round(masteryPct() * 100)}%, ${masteryPts()} / ${READY.length * 100} ${t('mastery points', 'điểm')}</span></div>
+    ${lvLegend()}
+    <div class="mgrid">${COURSE.map((m, i) => { const r2 = m.lessons.filter(l => LESSONS[l[0]]); if (!r2.length) return ''; return `<div class="mrow"><div><b>${i + 1}. ${esc(m.en)}</b><span class="vi" lang="vi">${esc(m.vi)}</span></div><div class="sqs">${r2.map(l => `<a href="#lesson-${l[0]}" title="${esc(l[1])}: ${LV[lvl(l[0])][0]}">${lvSq(l[0], 'big')}</a>`).join('')}</div></div>`; }).join('')}</div>
+    <p class="kbd">${t('Lesson quizzes take a lesson up to Proficient. Only a course challenge can make it Mastered, and a miss there moves it back down.', 'Quiz từng bài đưa bài lên tối đa Thành thạo. Chỉ thử thách tổng hợp mới đưa lên Tinh thông, và sai ở đó sẽ bị hạ mức.')} <a href="#review-challenge">${t('Take a course challenge', 'Làm thử thách tổng hợp')}</a></p>
+    <div class="pg-two">
+      <div><div class="sec-head"><div><h2>${t('Drill accuracy', '')}</h2><span class="tag-vi vi" lang="vi">Độ chính xác khi luyện tính</span></div></div>
+        <table class="acc"><tbody>${window.DRILLS.map(d => { const s = mem.drill[d.id], p = s && s.n ? s.first / s.n : null; return `<tr><td><a href="#review-drills" data-dt="${d.id}">${esc(d.en)}</a></td><td class="bar"><i style="width:${p === null ? 0 : p * 100}%" class="${p !== null && p < .6 ? 'lo' : ''}"></i></td><td>${p === null ? '–' : Math.round(p * 100) + '%'}</td><td class="kbd">${s ? s.n : 0}</td></tr>`; }).join('')}</tbody></table>
+        <p class="kbd">${t('First-try accuracy without hints, and problems attempted.', 'Tỷ lệ đúng ngay lần đầu không gợi ý, và số bài đã làm.')}</p></div>
+      <div><div class="sec-head"><div><h2>${t('Interview readiness', '')}</h2><span class="tag-vi vi" lang="vi">Mức sẵn sàng phỏng vấn</span></div></div>
+        <div class="ivready"><div class="big">${ivN ? Math.round(ivAvg * 100) + '%' : '–'}</div><p class="kbd">${t(`average best score on ${ivN} of ${window.INTERVIEW.length} questions`, `điểm cao nhất trung bình trên ${ivN}/${window.INTERVIEW.length} câu`)}</p>
+        <ul>${window.INTERVIEW.map(q => { const s = mem.iv[q.id]; return `<li class="${s ? (s.best >= .8 ? 'good' : 'mid') : ''}"><span>${esc(q.q[0])}</span><b>${s ? Math.round(s.best * 100) + '%' : '–'}</b></li>`; }).join('')}</ul>
+        <a class="btn small" href="#review-interview">Practise interview questions</a></div></div>
+    </div>
+    <div class="sec-head" style="margin-top:44px"><div><h2>${t('Badges', '')}</h2><span class="tag-vi vi" lang="vi">Huy hiệu</span></div><span class="kbd">${Object.keys(mem.badges).length} / ${BADGES.length}</span></div>
+    <div class="badges">${BADGES.map(b => { const got = mem.badges[b[0]]; return `<div class="badge ${got ? 'got' : ''}"><span class="bseal" aria-hidden="true"></span><div><b>${t(b[1], b[2])}</b><p class="kbd">${t(b[3], b[4])}</p>${got ? `<p class="kbd">${t('Earned', 'Đạt ngày')} ${got}</p>` : ''}</div></div>`; }).join('')}</div>
+  </div>`;
+  $$('[data-dt]').forEach(a => a.onclick = () => { mem.drillType = a.dataset.dt; save(); });
 };
 
 /* ---------- glossary ---------- */
@@ -952,7 +1298,7 @@ function wireLibrary() { $$('[data-book]').forEach(s => s.onchange = () => { mem
 (function () {
   const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
   const strip = h => String(h).replace(/<[^>]+>/g, ' ');
-  const IDX = [{ type: 'Practice', title: 'Mistake notebook', sub: 'Sổ lỗi sai', href: '#review-mistakes', text: 'mistake notebook so loi sai retest' }, { type: 'Practice', title: 'Mixed review', sub: 'Ôn tập tổng hợp', href: '#review', text: 'mixed review on tap tong hop' }];
+  const IDX = [{ type: 'Practice', title: 'Mistake notebook', sub: 'Sổ lỗi sai', href: '#review-mistakes', text: 'mistake notebook so loi sai retest' }, { type: 'Practice', title: 'Mixed review', sub: 'Ôn tập tổng hợp', href: '#review', text: 'mixed review on tap tong hop' }, { type: 'Practice', title: 'Course challenge', sub: 'Thử thách tổng hợp, lên mức Tinh thông', href: '#review-challenge', text: 'course challenge mastery mastered thu thach tong hop tinh thong' }, { type: 'Practice', title: 'Drills', sub: 'Luyện tính: bài tập số không giới hạn', href: '#review-drills', text: 'drills drill practice problems luyen tinh bai tap ' + window.DRILLS.map(d => d.en + ' ' + d.vi).join(' ').toLowerCase() }, { type: 'Practice', title: 'Mock interview', sub: 'Phỏng vấn thử ngân hàng đầu tư', href: '#review-interview', text: 'mock interview phong van thu technical walk me through ' + window.INTERVIEW.map(q => q.q[0]).join(' ').toLowerCase() }, { type: 'Progress', title: 'Your progress', sub: 'Tiến độ: XP, cấp bậc, huy hiệu, mức thành thạo', href: '#progress', text: 'progress tien do xp rank cap bac badges huy hieu mastery streak chuoi' }];
   READY.forEach(l => {
     const L = LESSONS[l.id];
     IDX.push({ type: 'Lesson', title: `${l.mi + 1}.${l.li + 1} ${l.en}`, sub: l.vi, href: '#lesson-' + l.id, text: norm([l.en, l.vi, L.intro.join(' '), L.sec.map(x => x.slice(0, 2).join(' ')).join(' ')].join(' ')) });
